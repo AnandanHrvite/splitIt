@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Trip Expense Split</title>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial;background:#f4f6f8;margin:0;padding:10px}
+.container{max-width:720px;margin:auto;background:#fff;padding:15px;border-radius:10px}
+h2,h4{text-align:center}
+input,select,button{width:100%;padding:12px;margin-top:8px;font-size:16px}
+button{background:#4CAF50;color:#fff;border:none;border-radius:6px}
+button.danger{background:#d9534f}
+button.whatsapp{background:#25D366}
+.box{background:#f1f1f1;padding:12px;margin-top:15px;border-radius:8px}
+.table-wrapper{overflow-x:auto}
+table{width:100%;min-width:600px;border-collapse:collapse}
+th,td{border:1px solid #ddd;padding:10px;text-align:center}
+th{background:#eaeaea}
+td button{width:70px;padding:6px;font-size:14px}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>Trip Expense Split</h2>
+
+<div class="box">
+<h4>Add Friend</h4>
+<input id="friendName" placeholder="Friend name">
+<button onclick="addFriend()">Add Friend</button>
+</div>
+
+<div class="box">
+<h4>Add / Edit Expense</h4>
+<input id="descInput" placeholder="Description">
+<input id="amountInput" type="number" placeholder="Amount">
+<select id="paidBy"></select>
+<button onclick="addExpense()">Save Expense</button>
+</div>
+
+<div class="box">
+<h4>Expenses</h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr>
+<th>Description</th>
+<th>Paid By</th>
+<th>Amount</th>
+<th>Per Person</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="expenseTable"></tbody>
+</table>
+</div>
+</div>
+
+<div class="box">
+<h4>Final Settlement</h4>
+<div id="result"></div>
+<button class="whatsapp" onclick="exportPDF()">Export PDF & Share</button>
+</div>
+
+<button class="danger" onclick="resetTrip()">Reset Trip</button>
+
+</div>
+
+<script>
+const { jsPDF } = window.jspdf;
+let friends=[], expenses=[], balances={}, editIndex=null;
+const KEY="trip_expense_data";
+
+/* Load */
+(function(){
+ const d=localStorage.getItem(KEY);
+ if(!d)return;
+ const p=JSON.parse(d);
+ friends=p.friends||[];
+ expenses=p.expenses||[];
+ recalc();
+ updateDropdown();
+ renderExpenses();
+ showResult();
+})();
+
+function save(){localStorage.setItem(KEY,JSON.stringify({friends,expenses}))}
+
+function addFriend(){
+ const n=friendName.value.trim();
+ if(!n||friends.includes(n))return;
+ friends.push(n); updateDropdown(); save(); friendName.value='';
+}
+
+function updateDropdown(){
+ paidBy.innerHTML='';
+ friends.forEach(f=>paidBy.innerHTML+=`<option>${f}</option>`);
+}
+
+function addExpense(){
+ const d=descInput.value;
+ const a=Number(amountInput.value);
+ const p=paidBy.value;
+ if(!a||!p)return;
+ const e={desc:d,amount:a,payer:p};
+ editIndex!==null?expenses[editIndex]=e:expenses.push(e);
+ editIndex=null;
+ descInput.value=''; amountInput.value='';
+ recalc(); renderExpenses(); showResult(); save();
+}
+
+function editExpense(i){
+ const e=expenses[i];
+ descInput.value=e.desc;
+ amountInput.value=e.amount;
+ paidBy.value=e.payer;
+ editIndex=i;
+}
+
+function deleteExpense(i){
+ if(!confirm("Delete expense?"))return;
+ expenses.splice(i,1);
+ recalc(); renderExpenses(); showResult(); save();
+}
+
+function recalc(){
+ balances={}; friends.forEach(f=>balances[f]=0);
+ expenses.forEach(e=>{
+  const s=e.amount/friends.length;
+  friends.forEach(f=>balances[f]-=s);
+  balances[e.payer]+=e.amount;
+ });
+}
+
+function renderExpenses(){
+ expenseTable.innerHTML='';
+ expenses.forEach((e,i)=>{
+  expenseTable.innerHTML+=`
+  <tr>
+   <td>${e.desc}</td>
+   <td>${e.payer}</td>
+   <td>${e.amount}</td>
+   <td>${(e.amount/friends.length).toFixed(2)}</td>
+   <td>
+    <button onclick="editExpense(${i})">Edit</button>
+    <button class="danger" onclick="deleteExpense(${i})">Del</button>
+   </td>
+  </tr>`;
+ });
+}
+
+/* Settlement */
+function buildSettlement(){
+ const cr=[],db=[],lines=[];
+ for(let n in balances){
+  balances[n]>0&&cr.push({n,amt:balances[n]});
+  balances[n]<0&&db.push({n,amt:-balances[n]});
+ }
+ let i=0,j=0;
+ while(i<db.length&&j<cr.length){
+  const p=Math.min(db[i].amt,cr[j].amt);
+  lines.push(`${db[i].n} pays ${cr[j].n} ₹${p.toFixed(2)}`);
+  db[i].amt-=p; cr[j].amt-=p;
+  if(db[i].amt===0)i++;
+  if(cr[j].amt===0)j++;
+ }
+ return lines;
+}
+
+function showResult(){
+ result.innerHTML='';
+ buildSettlement().forEach(l=>result.innerHTML+=`<p>${l}</p>`);
+}
+
+/* -------- PDF EXPORT -------- */
+function exportPDF(){
+ const pdf=new jsPDF();
+ pdf.text("Trip Expense Summary",14,15);
+
+ pdf.autoTable({
+  startY:20,
+  head:[["Description","Paid By","Amount","Per Person"]],
+  body:expenses.map(e=>[
+   e.desc,
+   e.payer,
+   e.amount,
+   (e.amount/friends.length).toFixed(2)
+  ])
+ });
+
+ let y=pdf.lastAutoTable.finalY+10;
+ pdf.text("Final Settlement",14,y);
+
+ buildSettlement().forEach((l,i)=>{
+  pdf.text(l,14,y+8+(i*7));
+ });
+
+ pdf.save("trip-expense-summary.pdf");
+
+ // Open WhatsApp after download
+ setTimeout(()=>window.open("https://wa.me/"),500);
+}
+
+function resetTrip(){
+ if(!confirm("Clear all trip data?"))return;
+ localStorage.removeItem(KEY);
+ location.reload();
+}
+</script>
+
+</body>
+</html>
