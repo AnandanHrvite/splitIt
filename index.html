@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>SplitIt – Trip Expense</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -33,6 +33,7 @@ button{
 button.small{padding:6px 10px;font-size:14px}
 button.danger{background:#c62828}
 button.share{background:#25D366}
+.hidden{display:none}
 .fab{
   position:fixed;bottom:20px;right:20px;
   width:56px;height:56px;border-radius:50%;
@@ -40,19 +41,14 @@ button.share{background:#25D366}
   display:flex;align-items:center;justify-content:center;
 }
 .expense{border-bottom:1px solid #ddd;padding:10px 0}
-.badge{font-size:12px;background:#eee;padding:2px 6px;border-radius:6px}
-.hidden{display:none}
-
-/* MODAL */
 .modal{
   position:fixed;inset:0;background:rgba(0,0,0,.6);
   display:none;align-items:center;justify-content:center;z-index:50;
 }
 .modal-box{
   background:#fff;width:90%;max-width:420px;
-  border-radius:14px;padding:16px;
+  padding:16px;border-radius:14px
 }
-.modal-actions{display:flex;gap:10px;margin-top:12px}
 input,select{
   width:100%;padding:12px;margin-top:8px;
   border-radius:10px;border:1px solid #ccc;font-size:16px
@@ -65,7 +61,7 @@ input,select{
 
 <div class="header">
   <button id="resetBtn" class="small">🔄</button>
-  <div id="tripTitle">Kerala Falls Trip 🌊</div>
+  <div>SplitIt</div>
   <div>
     <button id="lockBtn" class="small">🔓</button>
     <button id="friendsBtn" class="small">👥</button>
@@ -73,238 +69,200 @@ input,select{
 </div>
 
 <div class="card">
-  <h4>Expenses</h4>
-  <div id="expenseList"></div>
+ <h4>Expenses</h4>
+ <div id="expenseList"></div>
 </div>
 
 <div class="card">
-  <h4>Final Settlement</h4>
-  <div id="result"></div>
-  <button class="share" id="sharePdfBtn">Share PDF</button>
+ <h4>Final Settlement</h4>
+ <div id="result"></div>
+ <button class="share" onclick="exportPDF()">Export PDF</button>
 </div>
 
 <div class="fab" id="addBtn">+</div>
 
-<!-- GENERIC MODAL -->
 <div class="modal" id="modal">
  <div class="modal-box">
-  <h4 id="modalTitle"></h4>
   <div id="modalBody"></div>
-  <div class="modal-actions" id="modalActions"></div>
  </div>
 </div>
 
 <script>
 const { jsPDF } = window.jspdf;
-const KEY="splitit_FINAL_LOCKED";
-const readOnly=new URLSearchParams(location.search).get("view")==="1";
 
-let friends=["You"];
+let friends=[];          // ❌ no default "You"
 let expenses=[];
 let balances={};
 let locked=false;
-let tripName="Kerala Falls Trip 🌊";
-let editIndex=null;
+const modal=document.getElementById("modal");
 
-/* ---------- STORAGE ---------- */
+/* STORAGE */
 function save(){
- localStorage.setItem(KEY,JSON.stringify({friends,expenses,locked,tripName}));
+ localStorage.setItem("splitit_lock",JSON.stringify({friends,expenses,locked}));
 }
 (function(){
- const d=localStorage.getItem(KEY);
+ const d=localStorage.getItem("splitit_lock");
  if(d){
   const p=JSON.parse(d);
-  friends=p.friends||friends;
+  friends=p.friends||[];
   expenses=p.expenses||[];
   locked=p.locked||false;
-  tripName=p.tripName||tripName;
  }
- tripTitle.innerText=tripName;
- applyMode(); render();
+ updateMode(); render();
 })();
 
-/* ---------- MODAL ---------- */
-function showModal(title,body,actions){
- modalTitle.innerText=title;
- modalBody.innerHTML=body;
- modalActions.innerHTML="";
- actions.forEach(a=>{
-  const b=document.createElement("button");
-  b.textContent=a.text;
-  b.className=a.class||"";
-  b.onclick=a.onClick;
-  modalActions.appendChild(b);
- });
- modal.style.display="flex";
-}
+/* MODAL */
+function show(html){ modalBody.innerHTML=html; modal.style.display="flex"; }
 function closeModal(){ modal.style.display="none"; }
 
-/* ---------- MODE ---------- */
-function applyMode(){
- resetBtn.classList.toggle("hidden",locked||readOnly);
- addBtn.classList.toggle("hidden",locked||readOnly);
- friendsBtn.classList.toggle("hidden",readOnly);
+/* MODE */
+function updateMode(){
  lockBtn.textContent=locked?"🔒":"🔓";
+ addBtn.classList.toggle("hidden",locked);
+ resetBtn.classList.toggle("hidden",locked);
 }
 
-/* ---------- FRIENDS ---------- */
+/* FRIENDS */
 friendsBtn.onclick=()=>{
- showModal("Friends",
-  `<input id="newFriend" placeholder="Friend name">
-   <div id="friendList"></div>`,
-  [{text:"Close",class:"danger",onClick:closeModal}]
- );
- renderFriends();
-};
-function renderFriends(){
- friendList.innerHTML="";
- friends.forEach(f=>{
-  friendList.innerHTML+=`
+ if(locked) return;
+ show(`
+  <h4>Friends</h4>
+  <input id="fname" placeholder="Friend name">
+  <button onclick="addFriend()">Add Friend</button>
+  ${friends.map(f=>`
    <div class="friend-row">
     <span>${f}</span>
-    <div>
-     <button class="small" onclick="editFriend('${f}')">Edit</button>
-     <button class="danger small" onclick="deleteFriend('${f}')">Delete</button>
-    </div>
-   </div>`;
- });
+    <button class="danger small" onclick="removeFriend('${f}')">Delete</button>
+   </div>`).join("")}
+  <button class="danger" onclick="closeModal()">Close</button>
+ `);
+};
+
+function addFriend(){
+ const n=fname.value.trim();
+ if(!n||friends.includes(n))return;
+ friends.push(n);
+ save(); closeModal(); render();
 }
-function editFriend(name){
- showModal("Edit Friend",
-  `<input id="editName" value="${name}">`,
-  [
-   {text:"Save",onClick:()=>{
-     const n=editName.value.trim();
-     if(!n)return;
-     friends=friends.map(f=>f===name?n:f);
-     expenses.forEach(e=>{
-      if(e.payer===name)e.payer=n;
-      e.part=e.part.map(p=>p===name?n:p);
-     });
-     save(); closeModal(); render();
-   }},
-   {text:"Cancel",class:"danger",onClick:closeModal}
-  ]
- );
-}
-function deleteFriend(name){
- if(expenses.some(e=>e.payer===name||e.part.includes(name))){
-  showModal("Not allowed","Friend has expenses",[{text:"OK",onClick:closeModal}]);
+
+function removeFriend(f){
+ if(expenses.some(e=>e.payer===f||e.part.includes(f))){
+  show("<p>Friend used in expenses</p><button onclick='closeModal()'>OK</button>");
   return;
  }
- showModal("Delete Friend?",
-  `Delete ${name}?`,
-  [
-   {text:"Delete",class:"danger",onClick:()=>{
-     friends=friends.filter(f=>f!==name);
-     save(); closeModal(); render();
-   }},
-   {text:"Cancel",onClick:closeModal}
-  ]
- );
+ friends=friends.filter(x=>x!==f);
+ save(); closeModal(); render();
 }
 
-/* ---------- EXPENSE ---------- */
-addBtn.onclick=()=>openExpense();
+/* EXPENSE */
+addBtn.onclick=()=>{
+ if(locked) return;
+ if(!friends.length){
+  show("<p>Add friends before adding expenses</p><button onclick='closeModal()'>OK</button>");
+  return;
+ }
+ openExpense();
+};
+
 function openExpense(e,i){
- editIndex=i??null;
- showModal(editIndex===null?"Add Expense":"Edit Expense",
- `
- <input id="desc" placeholder="Description" value="${e?.desc||""}">
- <input id="amt" type="number" placeholder="Amount" value="${e?.amount||""}">
- <select id="payer">${friends.map(f=>`<option ${e?.payer===f?"selected":""}>${f}</option>`)}</select>
- <div>${friends.map(f=>`
-   <label><input type="checkbox" class="part" value="${f}" ${!e||e.part.includes(f)?"checked":""}> ${f}</label><br>`).join("")}</div>
- `,
- [
-  {text:"Save",onClick:saveExpense},
-  {text:"Cancel",class:"danger",onClick:closeModal}
- ]
- );
-}
-function saveExpense(){
- const part=[...document.querySelectorAll(".part:checked")].map(e=>e.value);
- const obj={
-  desc:desc.value,
-  amount:Number(amt.value),
-  payer:payer.value,
-  part
- };
- if(editIndex===null)expenses.push(obj);
- else expenses[editIndex]=obj;
- save(); closeModal(); render(); sharePrompt(obj);
-}
-function deleteExpense(i){
- showModal("Delete Expense?","Are you sure?",[
-  {text:"Delete",class:"danger",onClick:()=>{
-    expenses.splice(i,1);save();closeModal();render();
-  }},
-  {text:"Cancel",onClick:closeModal}
- ]);
+ show(`
+  <h4>${e?"Edit":"Add"} Expense</h4>
+  <input id="desc" placeholder="Description" value="${e?.desc||""}">
+  <input id="amt" type="number" placeholder="Amount" value="${e?.amount||""}">
+  <select id="payer">${friends.map(f=>`<option ${e?.payer===f?"selected":""}>${f}</option>`).join("")}</select>
+  ${friends.map(f=>`
+   <label>
+    <input type="checkbox" class="part" value="${f}" ${!e||e.part.includes(f)?"checked":""}>
+    ${f}
+   </label><br>`).join("")}
+  <button onclick="saveExpense(${i??"null"})">Save</button>
+  <button class="danger" onclick="closeModal()">Cancel</button>
+ `);
 }
 
-/* ---------- RENDER ---------- */
+function saveExpense(i){
+ const part=[...document.querySelectorAll(".part:checked")].map(e=>e.value);
+ if(!part.length) return;
+ const obj={desc:desc.value,amount:Number(amt.value),payer:payer.value,part};
+ if(i==null) expenses.push(obj);
+ else expenses[i]=obj;
+ save(); closeModal(); render();
+}
+
+function deleteExpense(i){
+ if(locked) return;
+ show(`
+  <p>Delete expense?</p>
+  <button class="danger" onclick="confirmDelete(${i})">Delete</button>
+  <button onclick="closeModal()">Cancel</button>
+ `);
+}
+function confirmDelete(i){
+ expenses.splice(i,1);
+ save(); closeModal(); render();
+}
+
+/* RENDER */
 function render(){
  expenseList.innerHTML="";
- balances={};friends.forEach(f=>balances[f]=0);
+ balances={}; friends.forEach(f=>balances[f]=0);
+
  expenses.forEach((e,i)=>{
-  const s=e.amount/e.part.length;
-  e.part.forEach(f=>balances[f]-=s);
+  const share=e.amount/e.part.length;
+  e.part.forEach(f=>balances[f]-=share);
   balances[e.payer]+=e.amount;
+
   expenseList.innerHTML+=`
    <div class="expense">
     <b>${e.desc}</b> ₹${e.amount}<br>
-    ${!locked&&!readOnly?`
-     <button class="small" onclick='openExpense(${JSON.stringify(e)},${i})'>Edit</button>
-     <button class="danger small" onclick='deleteExpense(${i})'>Delete</button>`:""}
+    Paid by ${e.payer}<br>
+    ${!locked?`
+     <button class="small" onclick="openExpense(expenses[${i}],${i})">Edit</button>
+     <button class="danger small" onclick="deleteExpense(${i})">Delete</button>`:""}
    </div>`;
  });
+ renderSettlement();
+}
+
+function renderSettlement(){
  result.innerHTML="";
+ const d=[],c=[];
+ for(const f in balances){
+  if(balances[f]<0)d.push({f,amt:-balances[f]});
+  if(balances[f]>0)c.push({f,amt:balances[f]});
+ }
+ let i=0,j=0;
+ while(i<d.length&&j<c.length){
+  const x=Math.min(d[i].amt,c[j].amt);
+  result.innerHTML+=`<div>${d[i].f} pays ${c[j].f} ₹${x.toFixed(2)}</div>`;
+  d[i].amt-=x; c[j].amt-=x;
+  if(d[i].amt===0)i++;
+  if(c[j].amt===0)j++;
+ }
+ if(!result.innerHTML) result.innerHTML="<i>No settlement needed</i>";
 }
 
-/* ---------- SHARE ---------- */
-function sharePrompt(e){
- showModal("Share update?",
-  `Expense added:<br><b>${e.desc}</b> ₹${e.amount}`,
-  [
-   {text:"Share WhatsApp",onClick:()=>{
-     const txt=`New expense: ${e.desc} ₹${e.amount}`;
-     window.open("https://wa.me/?text="+encodeURIComponent(txt));
-     closeModal();
-   }},
-   {text:"Close",class:"danger",onClick:closeModal}
-  ]
- );
-}
-
-/* ---------- PDF SHARE ---------- */
-sharePdfBtn.onclick=async()=>{
+/* PDF */
+function exportPDF(){
  const pdf=new jsPDF();
- pdf.text(tripName,14,15);
+ pdf.text("Trip Expenses",14,15);
  pdf.autoTable({
   startY:20,
   head:[["Desc","Paid By","Amount","Split"]],
   body:expenses.map(e=>[e.desc,e.payer,e.amount,e.part.join(", ")])
  });
- const blob=pdf.output("blob");
- const file=new File([blob],`${tripName}.pdf`,{type:"application/pdf"});
- if(navigator.canShare && navigator.canShare({files:[file]})){
-  await navigator.share({files:[file],title:tripName});
- }else{
-  showModal("iPhone note",
-   "For direct WhatsApp PDF sharing on iPhone, open this app in Safari.",
-   [{text:"OK",onClick:closeModal}]
-  );
-  pdf.save(`${tripName}.pdf`);
- }
-};
+ pdf.save("splitit.pdf");
+}
 
-/* ---------- OTHERS ---------- */
-lockBtn.onclick=()=>{if(readOnly)return;locked=!locked;save();applyMode();};
-resetBtn.onclick=()=>showModal("Clear all data?","This will remove everything",[
- {text:"Clear",class:"danger",onClick:()=>{localStorage.clear();location.reload();}},
- {text:"Cancel",onClick:closeModal}
-]);
+/* LOCK + RESET */
+lockBtn.onclick=()=>{ locked=!locked; save(); updateMode(); };
+resetBtn.onclick=()=>{
+ show(`
+  <p>Clear all data?</p>
+  <button class="danger" onclick="localStorage.clear();location.reload()">Clear</button>
+  <button onclick="closeModal()">Cancel</button>
+ `);
+};
 </script>
 </body>
 </html>
