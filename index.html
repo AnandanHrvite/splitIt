@@ -3,10 +3,14 @@
 <head>
 <meta charset="UTF-8">
 
-<!-- IMPORTANT: Prevent zoom -->
+<!-- Prevent mobile zoom -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
 <title>SplitIt – Trip Expense</title>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 
 <style>
 *{box-sizing:border-box}
@@ -14,10 +18,8 @@ body{
   font-family:system-ui,-apple-system,BlinkMacSystemFont;
   background:#f2f2f7;
   margin:0;
-  padding-bottom:120px;
+  padding-bottom:130px;
 }
-
-/* Header */
 .header{
   background:#4CAF50;
   color:#fff;
@@ -26,63 +28,47 @@ body{
   font-size:20px;
   font-weight:600;
 }
-
-/* Card */
 .card{
   background:#fff;
   margin:12px;
   padding:14px;
   border-radius:14px;
-  box-shadow:0 4px 10px rgba(0,0,0,0.06);
+  box-shadow:0 4px 10px rgba(0,0,0,.06);
 }
-
-.card h4{
-  margin:0 0 10px;
-}
-
-/* Inputs */
+.card h4{margin:0 0 10px}
 input,select,button{
   width:100%;
   padding:14px;
   margin-top:8px;
-  font-size:16px; /* prevents zoom */
+  font-size:16px;
   border-radius:10px;
   border:1px solid #ddd;
 }
-
 button{
   background:#4CAF50;
   color:#fff;
   border:none;
   font-weight:600;
 }
-
 button.danger{background:#e74c3c}
 button.whatsapp{background:#25D366}
-
-/* Expense list */
 .expense{
   padding:10px 0;
   border-bottom:1px solid #eee;
 }
 .expense:last-child{border-bottom:none}
-.expense b{display:block}
-
-/* Sticky bottom bar */
 .bottom-bar{
   position:fixed;
-  bottom:0;
-  left:0;
-  right:0;
+  bottom:0;left:0;right:0;
   background:#fff;
   padding:12px;
-  box-shadow:0 -4px 10px rgba(0,0,0,0.1);
+  box-shadow:0 -4px 10px rgba(0,0,0,.12);
 }
-
-/* Settlement */
-.settlement p{
-  margin:6px 0;
-  font-weight:500;
+.settlement p{margin:6px 0;font-weight:500}
+.footer{
+  text-align:center;
+  font-size:12px;
+  color:#777;
 }
 </style>
 </head>
@@ -109,10 +95,12 @@ button.whatsapp{background:#25D366}
 </div>
 
 <div class="card">
-<button class="danger" onclick="resetTrip()">Reset Trip</button>
+<button class="danger" onclick="hardReset()">Clear Cache & Reset</button>
 </div>
 
-<!-- Sticky Add Expense -->
+<div class="footer">SplitIt v2</div>
+
+<!-- Sticky Bottom Bar -->
 <div class="bottom-bar">
 <input id="descInput" placeholder="Expense description">
 <input id="amountInput" type="number" placeholder="Amount">
@@ -120,17 +108,28 @@ button.whatsapp{background:#25D366}
 <button onclick="addExpense()">Add Expense</button>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
-
 <script>
 const { jsPDF } = window.jspdf;
-let friends=[], expenses=[], balances={}, editIndex=null;
-const KEY="splitit_data";
 
-/* Load */
+/* ---------- VERSION RESET (AUTO CACHE CLEAR) ---------- */
+const APP_VERSION = "v2";
+const VERSION_KEY = "splitit_version";
+const DATA_KEY = "splitit_data";
+
+(function versionCheck(){
+  const old = localStorage.getItem(VERSION_KEY);
+  if (old !== APP_VERSION) {
+    localStorage.clear();
+    localStorage.setItem(VERSION_KEY, APP_VERSION);
+  }
+})();
+
+/* ---------- STATE ---------- */
+let friends=[], expenses=[], balances={};
+
+/* ---------- LOAD ---------- */
 (function(){
- const d=localStorage.getItem(KEY);
+ const d=localStorage.getItem(DATA_KEY);
  if(!d)return;
  const p=JSON.parse(d);
  friends=p.friends||[];
@@ -141,13 +140,17 @@ const KEY="splitit_data";
  showResult();
 })();
 
-function save(){localStorage.setItem(KEY,JSON.stringify({friends,expenses}))}
+function save(){
+ localStorage.setItem(DATA_KEY,JSON.stringify({friends,expenses}));
+}
 
+/* ---------- FRIENDS ---------- */
 function addFriend(){
  const n=friendName.value.trim();
  if(!n||friends.includes(n))return;
  friends.push(n);
- updateDropdown(); save();
+ updateDropdown();
+ save();
  friendName.value='';
 }
 
@@ -156,18 +159,27 @@ function updateDropdown(){
  friends.forEach(f=>paidBy.innerHTML+=`<option>${f}</option>`);
 }
 
+/* ---------- EXPENSE ---------- */
 function addExpense(){
  const d=descInput.value;
  const a=Number(amountInput.value);
  const p=paidBy.value;
  if(!a||!p)return;
  expenses.push({desc:d,amount:a,payer:p});
- descInput.value=''; amountInput.value='';
+ descInput.value='';
+ amountInput.value='';
  recalc(); renderExpenses(); showResult(); save();
 }
 
+function deleteExpense(i){
+ expenses.splice(i,1);
+ recalc(); renderExpenses(); showResult(); save();
+}
+
+/* ---------- CALC ---------- */
 function recalc(){
- balances={}; friends.forEach(f=>balances[f]=0);
+ balances={};
+ friends.forEach(f=>balances[f]=0);
  expenses.forEach(e=>{
   const s=e.amount/friends.length;
   friends.forEach(f=>balances[f]-=s);
@@ -175,6 +187,7 @@ function recalc(){
  });
 }
 
+/* ---------- UI ---------- */
 function renderExpenses(){
  expenseList.innerHTML='';
  expenses.forEach((e,i)=>{
@@ -187,11 +200,7 @@ function renderExpenses(){
  });
 }
 
-function deleteExpense(i){
- expenses.splice(i,1);
- recalc(); renderExpenses(); showResult(); save();
-}
-
+/* ---------- SETTLEMENT ---------- */
 function buildSettlement(){
  const cr=[],db=[],out=[];
  for(let n in balances){
@@ -214,6 +223,7 @@ function showResult(){
  buildSettlement().forEach(l=>result.innerHTML+=`<p>${l}</p>`);
 }
 
+/* ---------- PDF EXPORT ---------- */
 function exportPDF(){
  const pdf=new jsPDF();
  pdf.text("Trip Expense Summary",14,15);
@@ -229,9 +239,10 @@ function exportPDF(){
  setTimeout(()=>window.open("https://wa.me/"),500);
 }
 
-function resetTrip(){
- if(!confirm("Clear all data?"))return;
- localStorage.removeItem(KEY);
+/* ---------- HARD RESET ---------- */
+function hardReset(){
+ if(!confirm("Clear all app data & cache?"))return;
+ localStorage.clear();
  location.reload();
 }
 </script>
