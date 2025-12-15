@@ -3,19 +3,17 @@
 <head>
 <meta charset="UTF-8">
 
-<!-- Prevent mobile zoom -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
 <title>SplitIt – Trip Expense</title>
 
-<!-- jsPDF -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
 
 <style>
 *{box-sizing:border-box}
 body{
-  font-family:system-ui,-apple-system,BlinkMacSystemFont;
+  font-family:system-ui,-apple-system;
   background:#f2f2f7;
   margin:0;
   padding-bottom:130px;
@@ -51,7 +49,7 @@ button{
   font-weight:600;
 }
 button.danger{background:#e74c3c}
-button.whatsapp{background:#25D366}
+button.share{background:#25D366}
 .expense{
   padding:10px 0;
   border-bottom:1px solid #eee;
@@ -91,16 +89,15 @@ button.whatsapp{background:#25D366}
 <div class="card settlement">
 <h4>Final Settlement</h4>
 <div id="result"></div>
-<button class="whatsapp" onclick="exportPDF()">Export PDF & Share</button>
+<button class="share" onclick="exportAndSharePDF()">Export PDF & Share</button>
 </div>
 
 <div class="card">
-<button class="danger" onclick="hardReset()">Clear Cache & Reset</button>
+<button class="danger" onclick="hardReset()">Clear All Data</button>
 </div>
 
-<div class="footer">SplitIt v2</div>
+<div class="footer">Single-file version</div>
 
-<!-- Sticky Bottom Bar -->
 <div class="bottom-bar">
 <input id="descInput" placeholder="Expense description">
 <input id="amountInput" type="number" placeholder="Amount">
@@ -110,26 +107,13 @@ button.whatsapp{background:#25D366}
 
 <script>
 const { jsPDF } = window.jspdf;
+const STORAGE_KEY="splitit_single";
 
-/* ---------- VERSION RESET (AUTO CACHE CLEAR) ---------- */
-const APP_VERSION = "v2";
-const VERSION_KEY = "splitit_version";
-const DATA_KEY = "splitit_data";
-
-(function versionCheck(){
-  const old = localStorage.getItem(VERSION_KEY);
-  if (old !== APP_VERSION) {
-    localStorage.clear();
-    localStorage.setItem(VERSION_KEY, APP_VERSION);
-  }
-})();
-
-/* ---------- STATE ---------- */
 let friends=[], expenses=[], balances={};
 
-/* ---------- LOAD ---------- */
+/* Load */
 (function(){
- const d=localStorage.getItem(DATA_KEY);
+ const d=localStorage.getItem(STORAGE_KEY);
  if(!d)return;
  const p=JSON.parse(d);
  friends=p.friends||[];
@@ -141,10 +125,9 @@ let friends=[], expenses=[], balances={};
 })();
 
 function save(){
- localStorage.setItem(DATA_KEY,JSON.stringify({friends,expenses}));
+ localStorage.setItem(STORAGE_KEY,JSON.stringify({friends,expenses}));
 }
 
-/* ---------- FRIENDS ---------- */
 function addFriend(){
  const n=friendName.value.trim();
  if(!n||friends.includes(n))return;
@@ -159,7 +142,6 @@ function updateDropdown(){
  friends.forEach(f=>paidBy.innerHTML+=`<option>${f}</option>`);
 }
 
-/* ---------- EXPENSE ---------- */
 function addExpense(){
  const d=descInput.value;
  const a=Number(amountInput.value);
@@ -176,7 +158,6 @@ function deleteExpense(i){
  recalc(); renderExpenses(); showResult(); save();
 }
 
-/* ---------- CALC ---------- */
 function recalc(){
  balances={};
  friends.forEach(f=>balances[f]=0);
@@ -187,20 +168,18 @@ function recalc(){
  });
 }
 
-/* ---------- UI ---------- */
 function renderExpenses(){
  expenseList.innerHTML='';
  expenses.forEach((e,i)=>{
   expenseList.innerHTML+=`
-  <div class="expense">
+   <div class="expense">
     <b>${e.desc}</b>
     ₹${e.amount} • Paid by ${e.payer}
     <button class="danger" onclick="deleteExpense(${i})">Delete</button>
-  </div>`;
+   </div>`;
  });
 }
 
-/* ---------- SETTLEMENT ---------- */
 function buildSettlement(){
  const cr=[],db=[],out=[];
  for(let n in balances){
@@ -223,25 +202,33 @@ function showResult(){
  buildSettlement().forEach(l=>result.innerHTML+=`<p>${l}</p>`);
 }
 
-/* ---------- PDF EXPORT ---------- */
-function exportPDF(){
+async function exportAndSharePDF(){
  const pdf=new jsPDF();
  pdf.text("Trip Expense Summary",14,15);
+
  pdf.autoTable({
   startY:20,
   head:[["Description","Paid By","Amount"]],
   body:expenses.map(e=>[e.desc,e.payer,e.amount])
  });
+
  let y=pdf.lastAutoTable.finalY+10;
  pdf.text("Final Settlement",14,y);
  buildSettlement().forEach((l,i)=>pdf.text(l,14,y+8+(i*7)));
- pdf.save("trip-expense-summary.pdf");
- setTimeout(()=>window.open("https://wa.me/"),500);
+
+ const blob=pdf.output("blob");
+ const file=new File([blob],"trip-expense-summary.pdf",{type:"application/pdf"});
+
+ if(navigator.canShare && navigator.canShare({files:[file]})){
+  await navigator.share({files:[file]});
+ }else{
+  pdf.save("trip-expense-summary.pdf");
+  alert("PDF downloaded. Share manually.");
+ }
 }
 
-/* ---------- HARD RESET ---------- */
 function hardReset(){
- if(!confirm("Clear all app data & cache?"))return;
+ if(!confirm("Clear all data?"))return;
  localStorage.clear();
  location.reload();
 }
