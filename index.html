@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-
-<title>SplitIt – Trip Expense</title>
+<title>SplitIt – Kerala Trip Expense</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
@@ -14,12 +12,18 @@
 *{box-sizing:border-box}
 body{
   font-family:system-ui,-apple-system;
-  background:#f2f2f7;
   margin:0;
   padding-bottom:130px;
+  background:
+    linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35)),
+    url("https://images.pexels.com/photos/1666021/pexels-photo-1666021.jpeg?auto=compress&cs=tinysrgb&w=1600"),
+    linear-gradient(#1b5e20,#2e7d32);
+  background-size:cover;
+  background-position:center;
+  background-attachment:fixed;
 }
 .header{
-  background:#4CAF50;
+  background:rgba(0,0,0,.55);
   color:#fff;
   padding:16px;
   text-align:center;
@@ -27,147 +31,165 @@ body{
   font-weight:600;
 }
 .card{
-  background:#fff;
+  background:rgba(255,255,255,.9);
   margin:12px;
   padding:14px;
   border-radius:14px;
-  box-shadow:0 4px 10px rgba(0,0,0,.06);
 }
-.card h4{margin:0 0 10px}
 input,select,button{
   width:100%;
   padding:14px;
   margin-top:8px;
   font-size:16px;
   border-radius:10px;
-  border:1px solid #ddd;
+  border:1px solid #ccc;
 }
-button{
-  background:#4CAF50;
-  color:#fff;
-  border:none;
-  font-weight:600;
-}
-button.danger{background:#e74c3c}
+button{background:#2e7d32;color:#fff;border:none;font-weight:600}
+button.danger{background:#c62828}
+button.small{width:auto;padding:6px 12px;font-size:14px}
 button.share{background:#25D366}
-.expense{
-  padding:10px 0;
-  border-bottom:1px solid #eee;
-}
+.expense{padding:10px 0;border-bottom:1px solid #ddd}
 .expense:last-child{border-bottom:none}
 .bottom-bar{
-  position:fixed;
-  bottom:0;left:0;right:0;
-  background:#fff;
-  padding:12px;
-  box-shadow:0 -4px 10px rgba(0,0,0,.12);
+  position:fixed;bottom:0;left:0;right:0;
+  background:#fff;padding:12px;
+  box-shadow:0 -4px 10px rgba(0,0,0,.3);
 }
-.settlement p{margin:6px 0;font-weight:500}
-.footer{
-  text-align:center;
-  font-size:12px;
-  color:#777;
+.modal{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);
+  display:none;align-items:center;justify-content:center;
 }
+.modal-content{
+  background:#fff;width:90%;max-width:400px;
+  padding:16px;border-radius:12px;
+}
+.friend-row{
+  display:flex;gap:6px;align-items:center;margin-top:8px;
+}
+.friend-row span{flex:1}
 </style>
 </head>
 
 <body>
 
-<div class="header">SplitIt – Trip Expense</div>
-
-<div class="card">
-<h4>Add Friend</h4>
-<input id="friendName" placeholder="Friend name">
-<button onclick="addFriend()">Add Friend</button>
+<div class="header">
+  SplitIt – Kerala Falls Trip 🌊
+  <button class="small" onclick="openFriendModal()">+ Friends</button>
 </div>
 
 <div class="card">
-<h4>Expenses</h4>
-<div id="expenseList"></div>
-</div>
-
-<div class="card settlement">
-<h4>Final Settlement</h4>
-<div id="result"></div>
-<button class="share" onclick="exportAndSharePDF()">Export PDF & Share</button>
+  <h4>Expenses</h4>
+  <div id="expenseList"></div>
 </div>
 
 <div class="card">
-<button class="danger" onclick="hardReset()">Clear All Data</button>
+  <h4>Final Settlement</h4>
+  <div id="result"></div>
+  <button class="share" onclick="exportAndSharePDF()">Export PDF & Share</button>
 </div>
 
-<div class="footer">Single-file version</div>
+<div class="card">
+  <button class="danger" onclick="hardReset()">Clear All Data</button>
+</div>
 
+<!-- Add Expense -->
 <div class="bottom-bar">
-<input id="descInput" placeholder="Expense description">
-<input id="amountInput" type="number" placeholder="Amount">
-<select id="paidBy"></select>
-<button onclick="addExpense()">Add Expense</button>
+  <input id="descInput" placeholder="Expense description">
+  <input id="amountInput" type="number" placeholder="Amount">
+  <select id="paidBy"></select>
+  <button onclick="addExpense()">Add Expense</button>
+</div>
+
+<!-- FRIEND MODAL -->
+<div class="modal" id="friendModal">
+  <div class="modal-content">
+    <h4>Manage Friends</h4>
+    <input id="newFriend" placeholder="Friend name">
+    <button onclick="addFriend()">Add Friend</button>
+    <div id="friendList"></div>
+    <button class="danger" onclick="closeFriendModal()">Close</button>
+  </div>
 </div>
 
 <script>
 const { jsPDF } = window.jspdf;
-const STORAGE_KEY="splitit_single";
+const KEY="splitit_single";
 
 let friends=[], expenses=[], balances={};
 
-/* Load */
+/* LOAD */
 (function(){
- const d=localStorage.getItem(STORAGE_KEY);
+ const d=localStorage.getItem(KEY);
  if(!d)return;
  const p=JSON.parse(d);
  friends=p.friends||[];
  expenses=p.expenses||[];
- recalc();
- updateDropdown();
- renderExpenses();
- showResult();
+ recalc(); updateDropdown(); renderExpenses(); showResult();
 })();
 
-function save(){
- localStorage.setItem(STORAGE_KEY,JSON.stringify({friends,expenses}));
-}
+function save(){localStorage.setItem(KEY,JSON.stringify({friends,expenses}))}
 
+/* FRIENDS */
+function openFriendModal(){
+ renderFriends();
+ friendModal.style.display="flex";
+}
+function closeFriendModal(){
+ friendModal.style.display="none";
+}
 function addFriend(){
- const n=friendName.value.trim();
+ const n=newFriend.value.trim();
  if(!n||friends.includes(n))return;
  friends.push(n);
- updateDropdown();
- save();
- friendName.value='';
+ newFriend.value='';
+ updateDropdown(); save(); renderFriends();
 }
-
+function editFriend(oldName){
+ const newName=prompt("Edit friend name",oldName);
+ if(!newName||friends.includes(newName))return;
+ friends=friends.map(f=>f===oldName?newName:f);
+ expenses.forEach(e=>{ if(e.payer===oldName) e.payer=newName; });
+ recalc(); updateDropdown(); renderExpenses(); showResult(); save(); renderFriends();
+}
+function removeFriend(name){
+ const used=expenses.some(e=>e.payer===name);
+ if(used){
+   alert("Cannot delete. This friend has expenses.");
+   return;
+ }
+ friends=friends.filter(f=>f!==name);
+ recalc(); updateDropdown(); save(); renderFriends();
+}
+function renderFriends(){
+ friendList.innerHTML='';
+ friends.forEach(f=>{
+  friendList.innerHTML+=`
+   <div class="friend-row">
+    <span>${f}</span>
+    <button class="small" onclick="editFriend('${f}')">Edit</button>
+    <button class="danger small" onclick="removeFriend('${f}')">Delete</button>
+   </div>`;
+ });
+}
 function updateDropdown(){
  paidBy.innerHTML='';
  friends.forEach(f=>paidBy.innerHTML+=`<option>${f}</option>`);
 }
 
+/* EXPENSES */
 function addExpense(){
  const d=descInput.value;
  const a=Number(amountInput.value);
  const p=paidBy.value;
  if(!a||!p)return;
  expenses.push({desc:d,amount:a,payer:p});
- descInput.value='';
- amountInput.value='';
+ descInput.value=''; amountInput.value='';
  recalc(); renderExpenses(); showResult(); save();
 }
-
 function deleteExpense(i){
  expenses.splice(i,1);
  recalc(); renderExpenses(); showResult(); save();
 }
-
-function recalc(){
- balances={};
- friends.forEach(f=>balances[f]=0);
- expenses.forEach(e=>{
-  const s=e.amount/friends.length;
-  friends.forEach(f=>balances[f]-=s);
-  balances[e.payer]+=e.amount;
- });
-}
-
 function renderExpenses(){
  expenseList.innerHTML='';
  expenses.forEach((e,i)=>{
@@ -175,11 +197,20 @@ function renderExpenses(){
    <div class="expense">
     <b>${e.desc}</b>
     ₹${e.amount} • Paid by ${e.payer}
-    <button class="danger" onclick="deleteExpense(${i})">Delete</button>
+    <button class="danger small" onclick="deleteExpense(${i})">Delete</button>
    </div>`;
  });
 }
 
+/* CALC */
+function recalc(){
+ balances={}; friends.forEach(f=>balances[f]=0);
+ expenses.forEach(e=>{
+  const s=e.amount/friends.length;
+  friends.forEach(f=>balances[f]-=s);
+  balances[e.payer]+=e.amount;
+ });
+}
 function buildSettlement(){
  const cr=[],db=[],out=[];
  for(let n in balances){
@@ -196,37 +227,34 @@ function buildSettlement(){
  }
  return out;
 }
-
 function showResult(){
  result.innerHTML='';
  buildSettlement().forEach(l=>result.innerHTML+=`<p>${l}</p>`);
 }
 
+/* PDF */
 async function exportAndSharePDF(){
  const pdf=new jsPDF();
- pdf.text("Trip Expense Summary",14,15);
-
+ pdf.text("Kerala Falls Trip Expense Summary",14,15);
  pdf.autoTable({
   startY:20,
   head:[["Description","Paid By","Amount"]],
   body:expenses.map(e=>[e.desc,e.payer,e.amount])
  });
-
  let y=pdf.lastAutoTable.finalY+10;
  pdf.text("Final Settlement",14,y);
  buildSettlement().forEach((l,i)=>pdf.text(l,14,y+8+(i*7)));
 
  const blob=pdf.output("blob");
- const file=new File([blob],"trip-expense-summary.pdf",{type:"application/pdf"});
-
- if(navigator.canShare && navigator.canShare({files:[file]})){
+ const file=new File([blob],"kerala-trip.pdf",{type:"application/pdf"});
+ if(navigator.canShare&&navigator.canShare({files:[file]})){
   await navigator.share({files:[file]});
  }else{
-  pdf.save("trip-expense-summary.pdf");
-  alert("PDF downloaded. Share manually.");
+  pdf.save("kerala-trip.pdf");
  }
 }
 
+/* RESET */
 function hardReset(){
  if(!confirm("Clear all data?"))return;
  localStorage.clear();
